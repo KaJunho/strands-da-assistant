@@ -1,3 +1,29 @@
+# Data Analysis Agent 
+Data analysis assistant using Amazon Bedrock Knowledge Base and Guardrail, based on Strands SDK
+
+## How to use?
+First, cd to strands-da-assistant/, create a python virtual environment called .venv
+Next, follow the instructions below in Installation section, to install the project.
+Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to configure env vars.
+
+.env should be like:
+- aws_access_key_id=<your ak here>
+- aws_secret_access_key=<your sk here>
+- knowledge_base_id=BLUVITWLLE
+- guardrail_id=85mxpt5gtkqq
+- guardrail_version=1
+
+Finally, cd to strands-da-assistant/, run `bash start_app.sh` in your console.
+
+## Test questions
+1. 公司有多少名员工
+2. 请告诉我2024年销售额最高员工的姓名，员工ID，生日，性别，婚姻状况，岗位
+3. 哪名员工2024年、2025年游戏总销售量最多？
+4. 请查询2024年和2025年的总销量，概括公司销量的趋势
+5. 请概括公司不同division，2024至2025年的销量趋势
+
+
+--------------------
 # Strands Web UI
 
 A Streamlit-based web interface for Strands Agents with thinking process visualization and MCP integration.
