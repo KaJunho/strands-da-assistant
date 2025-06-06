@@ -1,5 +1,6 @@
 # Data Analysis Agent 
 Data analysis assistant using Amazon Bedrock Knowledge Base and Guardrail, based on Strands SDK
+This project is developed upon https://github.com/jief123/strands-web-ui/
 
 ## How to use?
 First, cd to strands-da-assistant/, create a python virtual environment called .venv
