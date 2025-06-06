@@ -20,29 +20,69 @@ from botocore.config import Config
 from strands_web_ui.mcp_server_manager import MCPServerManager
 from strands_web_ui.handlers.streamlit_handler import StreamlitHandler
 from strands_web_ui.utils.config_loader import load_config, load_mcp_config
+from dotenv import load_dotenv
 
+import boto3
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define some example tools
+load_dotenv()
+AK_ID = os.getenv("aws_access_key_id")
+SK_ID = os.getenv("aws_secret_access_key")
+KB_ID = os.getenv("knowledge_base_id")
+GR_ID = os.getenv("guardrail_id")
+GR_VER = os.getenv("guardrail_version")
+
+
 @tool
-def search_knowledge_base(query: str) -> dict:
+def query_KB_with_guardrail(query) -> tuple[str, str]:
     """
-    Search the knowledge base for information.
+    Search the knowledge base for personal or work-related information of employees, and then apply guardrail on the retrieved data for security reasons.
     
     Args:
-        query: The search query
+        query: (string) The search query
         
     Returns:
-        Relevant information from the knowledge base
+        A tuple contains three items:
+        1. SQL codes used by the knowledge base for data retrieval in string format
+        2. Results returned by the knowledge base
+        3. Results processed by guardrail for security reasons
     """
-    # Simulate search delay
-    time.sleep(1)
-    return {
-        "status": "success",
-        "content": [{"text": f"Found information about: {query}. This is simulated knowledge base content."}]
-    }
+    session = boto3.Session(
+        aws_access_key_id=AK_ID,
+        aws_secret_access_key=SK_ID,
+        region_name='us-east-1')
+    
+    # query KB
+    agent_runtime = session.client("bedrock-agent-runtime", region_name="us-east-1")
+    response = agent_runtime.retrieve(
+        retrievalQuery={"text": query},
+        knowledgeBaseId=KB_ID)
+    rows = []
+    for r in response['retrievalResults']:
+        rows.append(r["content"]["row"])
+    sql_query = response['retrievalResults'][0]["location"]['sqlLocation']['query']
+
+    # apply guardrail
+    rock_runtime = session.client("bedrock-runtime", region_name="us-east-1")
+    guarded_response = rock_runtime.apply_guardrail(
+        guardrailIdentifier=GR_ID,
+        guardrailVersion=GR_VER,
+        source='OUTPUT',
+        content=[
+        {
+            'text': {
+                'text': f"{str(rows)}",
+                'qualifiers': [
+                    'guard_content',
+                ]
+            }
+        },
+        ],
+        outputScope='INTERVENTIONS')
+    return sql_query, str(rows), guarded_response['outputs']
+
 
 def initialize_agent(config, mcp_manager=None):
     """
@@ -73,9 +113,15 @@ def initialize_agent(config, mcp_manager=None):
                 "budget_tokens": thinking_budget
             }
         }
+    session = boto3.Session(
+        aws_access_key_id=AK_ID,
+        aws_secret_access_key=SK_ID,
+        region_name='us-east-1'
+    )
     model = BedrockModel(
         model_id=model_config.get("model_id", "us.anthropic.claude-3-7-sonnet-20250219-v1:0"),
         region=model_config.get("region", "us-east-1"),
+        boto_session=session,
         boto_client_config=Config(
                     retries={
                         "max_attempts": 3,
@@ -87,8 +133,9 @@ def initialize_agent(config, mcp_manager=None):
         additional_request_fields=additional_request_fields
     )
     
+    # Default tools: query_KB_with_guardrail
     # Get tools from MCP servers if available
-    tools = [search_knowledge_base]
+    tools = [query_KB_with_guardrail]
     if mcp_manager:
         mcp_tools = mcp_manager.get_all_tools()
         tools.extend(mcp_tools)
@@ -98,10 +145,16 @@ def initialize_agent(config, mcp_manager=None):
     window_size = conversation_config.get("window_size", 20)
     conversation_manager = SlidingWindowConversationManager(window_size=window_size)
     
+    sys_ppt = '''You are a data analysis assistant. Your role is to help the user to analyze employee information in Knowledge Base. 
+    You can access a tool called query_KB_with_guardrail. Please use this tool to help the user retrieving necessary information from knowledge base,
+    and generate an answer for the user. The result of the tool maybe contains some masks or placeholders, but since these are used to prevent sensitive
+    personal information from being leaked, please keep all masks or placeholders in your answer if exist. Please also provide the sql codes used for data
+    retrieval and returned by the tool in your answer.'''
+
     # Initialize agent with conversation manager
     return Agent(
         model=model,
-        system_prompt=agent_config.get("system_prompt"),
+        system_prompt=sys_ppt,
         tools=tools,
         max_parallel_tools=agent_config.get("max_parallel_tools", os.cpu_count() or 1),
         record_direct_tool_call=agent_config.get("record_direct_tool_call", True),
@@ -109,6 +162,7 @@ def initialize_agent(config, mcp_manager=None):
         conversation_manager=conversation_manager,
         callback_handler=None  # Will be set per interaction
     )
+
 
 def extract_response_text(response):
     """
@@ -152,10 +206,12 @@ def extract_response_text(response):
     # Fallback
     return str(response)
 
+
+
 def main():
     """Main application entry point."""
     st.set_page_config(
-        page_title="Strands Agent Chat with MCP Integration",
+        page_title="Strands Data Analysis Agent",
         page_icon="🤖",
         layout="wide"
     )
@@ -185,10 +241,9 @@ def main():
     if "thinking_history" not in st.session_state:
         st.session_state.thinking_history = []
     
-    st.title("🤖 Strands Agent Chat with MCP Integration")
+    st.title("🤖 Strands Data Analysis Agent with Knowledge Base & Guardrail")
     st.markdown("""
-    This demo showcases a Strands agent with streaming responses, tool execution, and MCP server integration.
-    You can connect to MCP servers to extend the agent's capabilities with additional tools.
+    This demo showcases a Strands agent with ability to search for employee personal information from Bedrock Knowledge Base and apply Guardrail.
     """)
     
     # Sidebar for configuration
@@ -311,21 +366,26 @@ def main():
     # Display conversation history with thinking processes
     for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            
             # If this is an assistant message, check if there's thinking history for the previous question
+            # and display it BEFORE the response content
             if message["role"] == "assistant" and i > 0:  # Make sure there's a previous message
                 # Find thinking content for the previous question (user message)
                 for thinking_item in st.session_state.thinking_history:
                     if thinking_item["question_idx"] == i-1:  # i-1 is the index of the user message
-                        # Display the thinking content
-                        with st.expander("💭 Thinking Process", expanded=False):
-                            st.markdown(f"""
-                            <div style="background-color: rgba(67, 97, 238, 0.1); padding: 10px; border-left: 4px solid #4361ee; border-radius: 4px; color: var(--text-color, currentColor);">
-                            {thinking_item["content"]}
-                            </div>
-                            """, unsafe_allow_html=True)
+                        # Display the thinking content at the top
+                        st.markdown("### 💭 Thinking Process")
+                        st.markdown(f"""
+                        <div style="background-color: rgba(67, 97, 238, 0.1); padding: 10px; border-left: 4px solid #4361ee; border-radius: 4px; color: var(--text-color, currentColor);">
+                        {thinking_item["content"]}
+                        </div>
+                        <p style="color: var(--text-color, currentColor);"><em>End of thinking process</em></p>
+                        """, unsafe_allow_html=True)
+                        # Add a separator between thinking and response
+                        st.markdown("---")
                         break
+            
+            # Display the message content
+            st.markdown(message["content"])
     
     # Get user input
     user_input = st.chat_input("Ask something...", disabled=st.session_state.processing)

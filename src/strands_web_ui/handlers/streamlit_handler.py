@@ -116,8 +116,13 @@ class StreamlitHandler:
         """Handle the start of a thinking event."""
         self.is_thinking = True
         self.thinking_container = ""
-        # Create a thinking expander with a distinctive style
-        with self.placeholder.expander("💭 Model Thinking Process", expanded=True):
+        
+        # Clear the placeholder first to ensure thinking appears at the top
+        self.placeholder.empty()
+        
+        # Create a container for thinking at the top
+        thinking_expander = self.placeholder.expander("💭 Model Thinking Process", expanded=False)
+        with thinking_expander:
             self.thinking_placeholder = st.empty()
             # Use a distinctive style for thinking content
             self.thinking_placeholder.markdown("""
@@ -231,16 +236,16 @@ class StreamlitHandler:
                 })
                 
             # Create a permanent container for the thinking content
-            # This will be displayed below the response
+            # This will be displayed at the top of the response in an expander
             thinking_container = st.container()
             with thinking_container:
-                st.markdown("### 💭 Thinking Process")
-                st.markdown(f"""
-                <div style="background-color: rgba(67, 97, 238, 0.1); padding: 10px; border-left: 4px solid #4361ee; border-radius: 4px; color: var(--text-color, currentColor);">
-                {self.thinking_container}
-                </div>
-                <p style="color: var(--text-color, currentColor);"><em>End of thinking process</em></p>
-                """, unsafe_allow_html=True)
+                with st.expander("💭 Thinking Process", expanded=False):
+                    st.markdown(f"""
+                    <div style="background-color: rgba(67, 97, 238, 0.1); padding: 10px; border-left: 4px solid #4361ee; border-radius: 4px; color: var(--text-color, currentColor);">
+                    {self.thinking_container}
+                    </div>
+                    <p style="color: var(--text-color, currentColor);"><em>End of thinking process</em></p>
+                    """, unsafe_allow_html=True)
     
     def _handle_text_streaming(self, kwargs):
         """
