@@ -14,7 +14,7 @@ aws_secret_access_key = <your sk here>
 knowledge_base_id = <your kb id here>
 guardrail_id = <your guardrail id here>
 guardrail_version = <version>
-```bash
+```
 
 Note: for knowledge base and guardrail creation, you can deploy the cloudformation template (game-kb-with-guardrail.yaml).
 
