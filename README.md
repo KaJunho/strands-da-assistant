@@ -8,11 +8,13 @@ Next, follow the instructions below in **Installation section**, to install the 
 Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to configure environment variables. <br/>
 
 .env should be like:
-- aws_access_key_id=<your ak here>
-- aws_secret_access_key=<your sk here>
-- knowledge_base_id=BLUVITWLLE
-- guardrail_id=85mxpt5gtkqq
-- guardrail_version=1
+```bash
+aws_access_key_id = <your ak here>
+aws_secret_access_key = <your sk here>
+knowledge_base_id = <your kb id here>
+guardrail_id = <your guardrail id here>
+guardrail_version = <version>
+```bash
 
 Note: for knowledge base and guardrail creation, you can deploy the cloudformation template (game-kb-with-guardrail.yaml).
 
