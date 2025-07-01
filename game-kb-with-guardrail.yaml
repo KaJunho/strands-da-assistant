@@ -1,0 +1,478 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This Cloudformation Stack Creates a S3 bucket and a knowledge base using it as datasource.
+
+Parameters:
+  AgentName: 
+    Type: String
+    Description: A friendly name for the agent.( for e.g. a financial advisory agent called FinBot)
+    AllowedPattern: ^([0-9a-zA-Z][_-]?){1,100}$
+    Default: amazon-da-assistant
+  S3BucketName:
+    Type: String
+    Description: Enter the name of the S3 bucket to be created.
+    Default: game-reviews-0630
+  KnowledgeBaseName:
+    Type: String
+    Description: The name of the knowledge base.
+    Default: game-kb-0630
+  KnowledgeBaseDescription:
+    Type: String
+    Description: The description of the knowledge base.
+    Default: Game reviews knowledge base
+  DataSourceName:
+    Type: String
+    Description: The name of the data source.
+    Default: game_reviews-0630
+  DataSourceDescription:
+    Type: String
+    Description: The description of the data source.
+    Default: Data Source for Amazon DA Assistant Knowledge Base
+
+
+Resources:
+############# S3 ############
+  # Create a S3 bucket
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName:
+        Fn::Sub: ${S3BucketName}-${AWS::Region}-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+
+  # Lambda role for PDF upload
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${S3BucketName}-${AWS::Region}-${AWS::AccountId}/*"
+
+
+  # Lambda for PDF download and S3 upload
+  DownloadAndUploadLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          import boto3
+          import urllib.request
+          import os
+          import cfnresponse
+          
+          def handler(event, context):
+            try:
+              if event['RequestType'] in ['Create', 'Update']:
+                s3 = boto3.client('s3')
+                bucket_name = event['ResourceProperties']['BucketName']
+                github_url = event['ResourceProperties']['GitHubUrl']
+                file_name = github_url.split('/')[-1]
+                
+                # Download from GitHub
+                print(f"Downloading file from {github_url}")
+                temp_file_path = f'/tmp/{file_name}'
+                
+                req = urllib.request.Request(github_url, 
+                                            headers={'User-Agent': 'AWS CloudFormation Custom Resource'})
+                
+                with urllib.request.urlopen(req) as response, open(temp_file_path, 'wb') as out_file:
+                  out_file.write(response.read())
+                
+                # Upload to S3
+                print(f"Uploading to S3 bucket {bucket_name}")
+                s3.upload_file(temp_file_path, bucket_name, file_name)
+                os.remove(temp_file_path)
+                print("Upload successful")
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              else:  
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+            except Exception as e:
+              print(f"Error: {str(e)}")
+              cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+
+  # Trigger for PDF download and upload
+  TriggerDownloadAndUpload:
+    Type: Custom::DownloadAndUpload
+    DependsOn: S3Bucket
+    Properties:
+      ServiceToken: !GetAtt DownloadAndUploadLambda.Arn
+      BucketName: !Ref S3Bucket
+      GitHubUrl: 'https://raw.githubusercontent.com/KaJunho/public-documents/main/GameReviews.pdf'
+
+
+
+###### OpenSearch Serverless ######
+  # OSS encryption
+  NovaOSSEncryptionPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: game-encryption-policy
+      Type: encryption
+      Description: Encryption policy for game-review-collection
+      Policy: !Sub |
+        {
+          "Rules": [
+            {
+              "ResourceType": "collection",
+              "Resource": ["collection/game-review-collection"]
+            }
+          ],
+          "AWSOwnedKey": true
+        }
+
+
+  # OSS network
+  NovaOSSNetworkPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    DependsOn:
+      - NovaOSSEncryptionPolicy
+    Properties:
+      Name: game-network-policy
+      Type: network
+      Description: Network policy for game-review-collection
+      Policy: 
+        Fn::Sub: '[{"Description": "Public access for game-review-collection",
+          "Rules": [{"ResourceType": "dashboard", "Resource": ["collection/game-review-collection"]},
+          {"ResourceType": "collection", "Resource": ["collection/game-review-collection"]}],
+          "AllowFromPublic": true}]'
+
+
+  # OSS collection
+  NovaOSSCollection:
+    Type: AWS::OpenSearchServerless::Collection
+    DependsOn: 
+      - NovaOSSEncryptionPolicy
+      - NovaOSSNetworkPolicy
+    Properties:
+      Name: game-review-collection
+      Type: VECTORSEARCH
+      Description: 'Vector search collection for game reviews KB'
+
+
+  # OSS data access policy
+  NovaOSSAccessPolicy:
+    Type: AWS::OpenSearchServerless::AccessPolicy
+    DependsOn:
+      - NovaOSSNetworkPolicy
+      - KBRole
+    Properties:
+      Name: game-access-policy
+      Type: data
+      Description: 'Allow Bedrock to access the vector collection'
+      Policy: 
+        Fn::Sub:
+          - |
+            [
+              {
+                "Rules": [
+                  {
+                    "Resource": ["collection/game-review-collection"],
+                    "Permission": [
+                      "aoss:CreateCollectionItems", 
+                      "aoss:DeleteCollectionItems",
+                      "aoss:UpdateCollectionItems", 
+                      "aoss:DescribeCollectionItems"
+                    ],
+                    "ResourceType": "collection"
+                  },
+                  {
+                    "ResourceType": "index",
+                    "Resource": ["index/game-review-collection/*"],
+                    "Permission": [
+                      "aoss:CreateIndex",
+                      "aoss:DescribeIndex",
+                      "aoss:ReadDocument",
+                      "aoss:WriteDocument",
+                      "aoss:UpdateIndex",
+                      "aoss:DeleteIndex"
+                    ]
+                  }
+                ],
+                "Principal": [
+                  "${RoleArn}",
+                  "arn:aws:iam::${AWS::AccountId}:root",
+                  "arn:aws:iam::${AWS::AccountId}:role/Admin",
+                  "arn:aws:iam::${AWS::AccountId}:role/Admin-OneClick"
+                ]
+              }
+            ]
+          - RoleArn: !GetAtt KBRole.Arn
+
+
+  # OSS index
+  NovaOSSIndex:
+    Type: AWS::OpenSearchServerless::Index
+    DependsOn:
+      - NovaOSSCollection
+    Properties:
+      CollectionEndpoint: !GetAtt NovaOSSCollection.CollectionEndpoint
+      IndexName: game-review-index
+      Settings:
+        Index:
+          Knn: true
+      Mappings:
+        Properties:
+          vector:
+            Type: knn_vector
+            Dimension: 1024
+            Method:
+              Engine: faiss
+              Name: hnsw
+              SpaceType: l2
+              Parameters: {}
+          text:
+            Type: text
+          metadata:
+            Type: text
+            Index: false
+
+
+  # Custom resource to add a 10-second delay after VectorIndex creation
+  DelayFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import time
+          import cfnresponse
+          
+          def handler(event, context):
+              print('Received event: ' + str(event))
+              
+              if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                  # Sleep for 10 seconds
+                  print('Sleeping for 10 seconds...')
+                  time.sleep(10)
+                  print('Sleep complete')
+              
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              return
+
+  DelayAfterVectorIndex:
+    Type: Custom::Delay
+    Properties:
+      ServiceToken: !GetAtt DelayFunction.Arn
+    DependsOn: NovaOSSIndex
+
+
+############# KB ##############
+  # Bedrock service role
+  KBRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "AmazonBedrockExecutionRoleForKnowledgeBase_${KnowledgeBaseName}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+              - bedrock.amazonaws.com
+          Action:
+            - sts:AssumeRole
+            - sts:TagSession
+          Condition:
+            StringEquals:
+              aws:SourceAccount:
+                Fn::Sub: ${AWS::AccountId}
+            ArnLike:
+              aws:SourceArn:
+                Fn::Sub: arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*
+      Policies:
+      - PolicyName: FoundationModelPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:ListCustomModels
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+                - bedrock:GetFoundationModelAvailability
+              Resource:
+                Fn::Sub: arn:aws:bedrock:${AWS::Region}::foundation-model/*
+              Sid: BedrockInvokeModelStatement
+      - PolicyName: OSSPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - aoss:APIAccessAll
+            Resource:
+              Fn::Sub: arn:aws:aoss:${AWS::Region}:${AWS::AccountId}:collection/*
+            Sid: OpenSearchServerlessAPIAccessAllStatement
+      - PolicyName: S3Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:ListBucket
+            Resource: arn:aws:s3:::*
+            Sid: S3ListBucketStatement
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+              Fn::Sub: arn:aws:s3:::${S3BucketName}-${AWS::Region}-${AWS::AccountId}/*
+            Sid: S3GetObjectStatement
+      - PolicyName: BedrockChatDoc
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'bedrock:Retrieve'
+                - 'bedrock:RetrieveAndGenerate'
+              Resource: '*'
+      - PolicyName: Guardrails
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'bedrock:ApplyGuardrail'
+                - 'lambda:InvokeFunction'
+              Resource: '*'
+
+
+  # BedrockKnowledgeBase
+  BedrockKnowledgeBase:
+    Type: AWS::Bedrock::KnowledgeBase
+    DependsOn: ["TriggerDownloadAndUpload", "NovaOSSAccessPolicy", "NovaOSSIndex", "DelayAfterVectorIndex"]
+    Properties:
+      Name: !Ref KnowledgeBaseName
+      Description: !Ref KnowledgeBaseDescription
+      RoleArn: !GetAtt KBRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: VECTOR
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0
+      StorageConfiguration:
+        Type: OPENSEARCH_SERVERLESS
+        OpensearchServerlessConfiguration:
+          CollectionArn: !GetAtt NovaOSSCollection.Arn
+          VectorIndexName: game-review-index
+          FieldMapping:
+            VectorField: vector
+            TextField: text
+            MetadataField: metadata
+
+
+  # KB data source
+  KnowledgeBaseDataSource:
+    Type: AWS::Bedrock::DataSource
+    DependsOn:
+      - BedrockKnowledgeBase
+    Properties:
+      Name: !Ref DataSourceName
+      Description: !Ref DataSourceDescription
+      KnowledgeBaseId: !Ref BedrockKnowledgeBase
+      DataSourceConfiguration:
+        Type: S3
+        S3Configuration:
+          BucketArn: !GetAtt S3Bucket.Arn
+          InclusionPrefixes:
+            - "GameReviews.pdf"
+
+
+############ Guardrail ###########
+  PIIGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      BlockedInputMessaging: "Sorry, I cannot answer this question."
+      BlockedOutputsMessaging: "Sorry, I cannot answer this question."
+      Description: "This guardrail blocks sensitive PII."
+      Name: "PIIGuardrail"
+      SensitiveInformationPolicyConfig: 
+        PiiEntitiesConfig:
+          - Type: NAME 
+            Action: ANONYMIZE
+            InputEnabled: false
+            OutputEnabled: true
+          - Type: EMAIL
+            Action: ANONYMIZE
+            InputEnabled: false
+            OutputEnabled: true
+
+
+###### Agent ######
+  AmazonBedrockExecutionRoleForAgentsQA:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AmazonBedrockExecutionRoleForAgents_DAAgent
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: bedrock.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
+
+  AgentResource:
+      Type: AWS::Bedrock::Agent
+      Properties:
+        AgentName: !Ref AgentName
+        AgentResourceRoleArn: !GetAtt AmazonBedrockExecutionRoleForAgentsQA.Arn
+        AutoPrepare: true
+        FoundationModel: "anthropic.claude-3-5-haiku-20241022-v1:0"
+        Instruction: "You are a Q&A bot to answer questions on games"
+        IdleSessionTTLInSeconds: 900
+        KnowledgeBases:
+          - KnowledgeBaseId: !Ref BedrockKnowledgeBase
+            Description: !Ref KnowledgeBaseDescription
+            KnowledgeBaseState: ENABLED
+        GuardrailConfiguration:
+          GuardrailIdentifier: !Ref PIIGuardrail
+          GuardrailVersion: DRAFT
+      DependsOn: ["BedrockKnowledgeBase", "PIIGuardrail"]
+
+
+Outputs:
+  S3BucketName:
+    Description: "Name of the created S3 bucket"
+    Value: !Ref S3Bucket
+  KnowledgeBaseId:
+    Description: "ID of the created Knowledge Base"
+    Value: !Ref BedrockKnowledgeBase
+  GuardrailId:
+    Description: "ID of the created Guardrail"
+    Value: !Ref PIIGuardrail
