@@ -3,9 +3,9 @@ Data analysis assistant using Amazon Bedrock Knowledge Base and Guardrail, based
 This project is developed upon https://github.com/jief123/strands-web-ui/
 
 ## How to use?
-First, cd to strands-da-assistant/, create a python virtual environment called .venv
-Next, follow the instructions below in Installation section, to install the project.
-Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to configure env vars.
+First, cd to strands-da-assistant/, create a python virtual environment called .venv. <br/>
+Next, follow the instructions below in **Installation section**, to install the project. <br/>
+Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to configure environment variables. <br/>
 
 .env should be like:
 - aws_access_key_id=<your ak here>
@@ -13,6 +13,8 @@ Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to config
 - knowledge_base_id=BLUVITWLLE
 - guardrail_id=85mxpt5gtkqq
 - guardrail_version=1
+
+Note: for knowledge base and guardrail creation, you can deploy the cloudformation template (game-kb-with-guardrail.yaml).
 
 Finally, cd to strands-da-assistant/, run `bash start_app.sh` in your console.
 
