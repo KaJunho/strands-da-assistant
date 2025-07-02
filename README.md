@@ -2,7 +2,23 @@
 Data analysis assistant using Amazon Bedrock Knowledge Base and Guardrail, based on Strands SDK.
 This project is developed upon https://github.com/jief123/strands-web-ui/
 
+## Prerequisites
+- Python 3.10 or higher
+- Streamlit
+- Strands Agents SDK
+- MCP
+
+
 ## How to use?
+
+```bash
+# Clone the repository
+git clone 
+cd strands-web-ui
+
+# Install in development mode
+pip install -e .
+```
 First, cd to strands-da-assistant/, create a python virtual environment called .venv. <br/>
 Next, follow the instructions below in **Installation section**, to install the project. <br/>
 Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to configure environment variables. <br/>
