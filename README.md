@@ -13,7 +13,13 @@ This project is developed upon https://github.com/jief123/strands-web-ui/
 
 ```bash
 # Clone the repository
-git clone 
+git clone https://github.com/KaJunho/strands-da-assistant.git
+
+# cd to strands-da-assistant/, create a python virtual environment called .venv.
+cd strands-da-assistant
+python -m venv .venv
+source .venv/bin/activate
+
 cd strands-web-ui
 
 # Install in development mode
