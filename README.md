@@ -25,10 +25,8 @@ cd strands-web-ui
 # Install in development mode
 pip install -e .
 ```
-First, cd to strands-da-assistant/, create a python virtual environment called .venv. <br/>
-Next, follow the instructions below in **Installation section**, to install the project. <br/>
-Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to configure environment variables. <br/>
 
+Then, cd to strands-da-assistant/src/strands_web_ui/ , add a .env file to configure environment variables. 
 .env should be like:
 ```bash
 aws_access_key_id = <your ak here>
@@ -38,7 +36,7 @@ guardrail_id = <your guardrail id here>
 guardrail_version = <version>
 ```
 
-Note: for knowledge base and guardrail creation, you can deploy the cloudformation template (game-kb-with-guardrail.yaml).
+Note: You can create your own Amazon Bedrock knowledge base and guardrail in AWS management console.
 
 Finally, cd to strands-da-assistant/, run `bash start_app.sh` in your console.
 
