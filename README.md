@@ -36,7 +36,7 @@ guardrail_id = <your guardrail id here>
 guardrail_version = <version>
 ```
 
-Note: You can create your own Amazon Bedrock knowledge base and guardrail in AWS management console.
+Note: You can create your own Amazon Bedrock knowledge base and guardrail in AWS management console. Refer to this [doc](https://amzn-chn.feishu.cn/docx/Weg1d1CswoeIh6xJK4ocMeEPnxf?from=from_copylink) for procedures.
 
 Finally, cd to strands-da-assistant/, run `bash start_app.sh` in your console.
 
