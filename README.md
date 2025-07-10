@@ -1,6 +1,5 @@
 # Data Analysis Agent 
 Data analysis assistant using Amazon Bedrock Knowledge Base and Guardrail, based on Strands SDK.
-This project is developed upon https://github.com/jief123/strands-web-ui/
 
 ## Prerequisites
 - Python 3.10 or higher
@@ -40,7 +39,14 @@ Note: You can create your own Amazon Bedrock knowledge base and guardrail in AWS
 
 Finally, cd to strands-da-assistant/, run `bash start_app.sh` in your console.
 
-## Test questions
+## Test questions 
+1. How many employees does the company have?
+2. Please tell me the name, employee ID, date of birth, gender, marital status, and position of the top-selling employee in 2024.
+3. Which employee had the highest total game sales in 2024 and 2025?
+4. Please query the total sales in 2024 and 2025, and summarize the company's sales trend.
+5. Please summarize the sales trends from 2024 to 2025 across the company's different divisions.
+
+中文版
 1. 公司有多少名员工
 2. 请告诉我2024年销售额最高员工的姓名，员工ID，生日，性别，婚姻状况，岗位
 3. 哪名员工2024年、2025年游戏总销售量最多？
