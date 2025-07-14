@@ -1,6 +1,9 @@
 # Data Analysis Agent 
 Data analysis assistant using Amazon Bedrock Knowledge Base and Guardrail, based on Strands SDK.
 
+## System Architecture
+<img width="1447" height="803" alt="StrandsDAarch" src="https://github.com/user-attachments/assets/9dfdd1cd-714e-4370-8e64-370b18866902" />
+
 ## Prerequisites
 - Python 3.10 or higher
 - Streamlit
